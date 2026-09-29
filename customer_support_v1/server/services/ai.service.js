@@ -1,7 +1,10 @@
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
-
 dotenv.config();
+
+import { zodTextFormat } from 'openai/helpers/zod';
+import { profileSchema } from '../utils/profile.shema.js';
+import KnowledgeChunk from '../models/knowledgeChunk.model.js';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
@@ -88,8 +91,6 @@ const openai = new OpenAI({
 //     return response.output_text;
 // };
 
-
-
 export const chatWithAI = async (messages) => {
     const response = await openai.responses.create({
         model: 'gpt-5.6-luna',
@@ -99,15 +100,22 @@ export const chatWithAI = async (messages) => {
 
             Help customers with SwiftShip shipments and services.
 
+            When you need information about SwiftShip policies,
+            services, delivery times, damaged shipments, etc.,
+            use the get_knowledge tool.
+
             When a customer asks about the status, location,
             progress, or delivery of a shipment, use the get_shipment_status tool
-            when the customer provides a tracking number. 
-            If they ask about a shipment but don't provide a tracking number, ask them for it.
+            when the customer provides a tracking number.
+
+            If they ask about a shipment but don't provide a tracking number,
+            ask them for it.
 
             Do not invent shipment information.
 
             Only provide shipment information that comes
             from the tool result.
+            
         `,
 
         input: messages,
@@ -128,9 +136,81 @@ export const chatWithAI = async (messages) => {
                     required: ['trackingNumber'],
                     additionalProperties: false
                 }
+            },
+
+            {
+                type: 'function',
+                name: 'get_knowledge',
+                description: 'Get relevant knowledge from the SwiftShip knowledge base.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        question: {
+                            type: 'string',
+                            description: 'The customer question to search for in the knowledge base.'
+                        }
+                    },
+                    required: ['question'],
+                    additionalProperties: false
+                }
             }
         ]
     });
 
     return response;
 };
+
+// export const testStructuredOutput = async () => {
+//     try {
+//         const response = await openai.responses.parse({
+//             model: 'gpt-5.6-luna',
+
+//             input: 'My name is Kemi, I am 25 years old and I live in Port Harcourt.',
+
+//             text: {
+//                 format: zodTextFormat(profileSchema, 'profile')
+//             }
+//         });
+
+//         console.log(response.output_parsed);
+
+//         return response.output_parsed;
+//     } catch (error) {
+//         console.error(error);
+
+//         throw error;
+//     }
+// };
+
+
+// create embedding 
+export const createEmbedding = async (text) => {
+    try {
+        const response = await openai.embeddings.create({
+            model: 'text-embedding-3-small',
+            input: text
+        });
+
+        return response.data[0].embedding;
+    } catch (error) {
+        console.error('Error creating embedding:', error);
+        throw error;
+    }
+}
+
+
+export const createKnowledgeChunk = async (content, metadata) => {
+    try {
+        const embedding = await createEmbedding(content);
+        const knowledgeChunk = await KnowledgeChunk.create({
+            content,
+            embedding,
+            metadata
+        });
+        return knowledgeChunk;
+        
+    } catch (error) {
+        console.error('Error creating knowledge chunk:', error);
+        throw error;
+    }
+}
